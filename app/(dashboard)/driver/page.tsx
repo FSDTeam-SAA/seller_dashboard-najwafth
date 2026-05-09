@@ -1,0 +1,223 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Clock, MapPin, Phone, Plus, Send, ShoppingCart, X } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { MetricCard, Modal, ModalHeader, PageFrame, SectionCard, StatusPill } from "@/components/seller/primitives";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { createDriverRequest, getMyDriverRequests, getMyShop, getSellerOverview } from "@/lib/api";
+import { formatDate } from "@/lib/utils";
+
+type Driver = {
+  _id: string;
+  name?: string;
+  phone?: string;
+  vehicle?: string;
+  vehicleId?: string;
+  address?: string;
+  status?: string;
+  orderId?: string;
+  scheduledAt?: string;
+};
+
+const emptyForm = {
+  shopName: "",
+  shopPhone: "",
+  location: "",
+  orderDate: "",
+  customerName: "",
+  totalItems: "",
+  orderId: "",
+  price: "",
+  customerLocation: "",
+  message: "",
+};
+
+export default function DriverPage() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+
+  const overview = useQuery<{ metrics?: { ordersToday?: number; totalCompletedOrders?: number } }>({
+    queryKey: ["seller-overview"],
+    queryFn: getSellerOverview,
+  });
+  const shopQuery = useQuery<{ _id?: string }>({ queryKey: ["my-shop"], queryFn: getMyShop });
+  const shopId = shopQuery.data?._id;
+  const driversQuery = useQuery<{ requests?: Driver[] } | Driver[]>({
+    queryKey: ["seller-drivers", shopId],
+    queryFn: () => getMyDriverRequests(shopId),
+    enabled: !!shopId,
+  });
+
+  const list = (Array.isArray(driversQuery.data) ? driversQuery.data : driversQuery.data?.requests) || [];
+
+  const createMutation = useMutation({
+    mutationFn: createDriverRequest,
+    onSuccess: () => {
+      toast.success("Driver request submitted.");
+      queryClient.invalidateQueries({ queryKey: ["seller-drivers"] });
+      setOpen(false);
+      setForm(emptyForm);
+    },
+  });
+
+  return (
+    <PageFrame
+      title="Driver Management"
+      subtitle="Manage drivers and track driver status in real time."
+      action={
+        <Button className="bg-[#103670] text-white hover:bg-[#0d2856]" onClick={() => setOpen(true)}>
+          <Plus className="size-4" /> New Request For Driver
+        </Button>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MetricCard
+          label="Orders Today"
+          value={overview.data?.metrics?.ordersToday ?? 262}
+          icon={<ShoppingCart className="size-5" />}
+          iconBg="bg-[#3d8ef5]"
+          iconColor="text-white"
+        />
+        <MetricCard
+          label="Completed Orders"
+          value={overview.data?.metrics?.totalCompletedOrders ?? 1700}
+          icon={<ShoppingCart className="size-5" />}
+          iconBg="bg-[#3d8ef5]"
+          iconColor="text-white"
+        />
+      </div>
+
+      <SectionCard className="mt-6 bg-[#eef4ff]">
+        <h2 className="text-[20px] font-semibold text-[#202124]">Assigned Drivers</h2>
+        <p className="text-[14px] text-[#5b6371]">Drivers assigned to handle and deliver current orders.</p>
+
+        <div className="mt-4 space-y-3">
+          {(list.length > 0 ? list : Array.from({ length: 2 }).map((_, i) => ({ _id: String(i) } as Driver))).map((driver) => {
+            const initials = (driver.name || "Rahim Uddin").split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
+            return (
+              <div key={driver._id} className="flex items-center gap-4 rounded-[12px] bg-white p-4">
+                <div className="flex size-12 items-center justify-center rounded-full bg-[#3d8ef5] text-[16px] font-semibold text-white">
+                  {initials}
+                </div>
+                <div className="flex-1 grid gap-1 text-[14px]">
+                  <p className="text-[16px] font-semibold text-[#202124]">{driver.name || "Rahim Uddin"}</p>
+                  <p className="text-[#5b6371]">
+                    Vehicle: <span className="text-[#3d8ef5]">{driver.vehicle || "Bick"}</span>
+                  </p>
+                  <p className="text-[#5b6371]">
+                    ID: <span className="text-[#3d8ef5]">{driver.vehicleId || "ABC-123"}</span>
+                  </p>
+                  <p className="flex items-center gap-1 text-[#3d8ef5]">
+                    <Phone className="size-3.5" /> {driver.phone || "01XXXXXXXXX"}
+                  </p>
+                  <p className="flex items-start gap-1 text-[#5b6371]">
+                    <MapPin className="size-3.5 text-[#3d8ef5]" />
+                    Delivery Address {driver.address || "456 Park Avenue, Dhaka 1207"}
+                  </p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <StatusPill status={driver.status || "pending"} />
+                  <p className="text-[#3d8ef5]">{driver.orderId || "ORD-9102"}</p>
+                  <p className="flex items-center gap-1 text-[12px] text-[#5b6371]">
+                    <Clock className="size-3.5" /> {driver.scheduledAt ? formatDate(driver.scheduledAt) : "10:30 AM"}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </SectionCard>
+
+      <Modal open={open} onClose={() => setOpen(false)} className="max-w-[820px]">
+        <ModalHeader title="Add new request" subtitle="New Request For Driver for driver" onClose={() => setOpen(false)} />
+
+        <h3 className="mb-3 text-[16px] font-semibold text-[#3d8ef5]">Books Store Information</h3>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Books Store Name *</label>
+            <Input value={form.shopName} onChange={(e) => setForm({ ...form, shopName: e.target.value })} placeholder="ORD-9102" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Phone Number*</label>
+            <Input value={form.shopPhone} onChange={(e) => setForm({ ...form, shopPhone: e.target.value })} placeholder="01810641003" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Location *</label>
+            <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="456 Park Avenue, Dhaka 1207" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Order Date: *</label>
+            <Input type="date" value={form.orderDate} onChange={(e) => setForm({ ...form, orderDate: e.target.value })} />
+          </div>
+        </div>
+
+        <h3 className="mb-3 mt-6 text-[16px] font-semibold text-[#3d8ef5]">Customer Information</h3>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Customer Name *</label>
+            <Input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} placeholder="ORD-9102" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Total Items *</label>
+            <Input value={form.totalItems} onChange={(e) => setForm({ ...form, totalItems: e.target.value })} placeholder="4 Books" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Order ID *</label>
+            <Input value={form.orderId} onChange={(e) => setForm({ ...form, orderId: e.target.value })} placeholder="ORD-9102" />
+          </div>
+          <div>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Price *</label>
+            <Input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="$12.00" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Location *</label>
+            <Input value={form.customerLocation} onChange={(e) => setForm({ ...form, customerLocation: e.target.value })} placeholder="456 Park Avenue, Dhaka 1207" />
+          </div>
+          <div className="md:col-span-2">
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Message</label>
+            <textarea
+              className="min-h-[100px] w-full rounded-[10px] border border-[#cfd4dc] bg-white px-4 py-3 text-[14px]"
+              value={form.message}
+              onChange={(e) => setForm({ ...form, message: e.target.value })}
+              placeholder="A book on behavioral psychology and decision-making."
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <Button variant="outline" onClick={() => setOpen(false)} type="button">
+            Cancel
+          </Button>
+          <Button
+            className="bg-[#6d98c0] hover:bg-[#5f88ae]"
+            disabled={createMutation.isPending}
+            onClick={() =>
+              createMutation.mutate({
+                shopName: form.shopName,
+                shopPhone: form.shopPhone,
+                location: form.location,
+                orderDate: form.orderDate,
+                customerName: form.customerName,
+                totalItems: form.totalItems,
+                orderId: form.orderId,
+                price: form.price,
+                customerLocation: form.customerLocation,
+                message: form.message,
+              })
+            }
+            type="button"
+          >
+            <Send className="size-4" /> {createMutation.isPending ? "Submitting..." : "Submit Request"}
+          </Button>
+        </div>
+        <button className="hidden" type="button" aria-hidden>
+          <X />
+        </button>
+      </Modal>
+    </PageFrame>
+  );
+}
