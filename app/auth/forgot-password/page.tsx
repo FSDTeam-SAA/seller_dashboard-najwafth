@@ -1,7 +1,7 @@
 import { AuthShell } from "@/components/auth/auth-shell";
-import { LoginForm } from "@/components/auth/login-form";
+import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 
-export default async function SignInPage({
+export default async function ForgotPasswordPage({
   searchParams,
 }: {
   searchParams: Promise<{ email?: string | string[] }>;
@@ -10,8 +10,11 @@ export default async function SignInPage({
   const email = typeof params.email === "string" ? params.email : "";
 
   return (
-    <AuthShell bodyClassName="max-w-[498px]">
-      <LoginForm initialEmail={email} />
+    <AuthShell
+      title="Reset password"
+      description="Enter your email to receive the OTP"
+    >
+      <ForgotPasswordForm initialEmail={email} />
     </AuthShell>
   );
 }

@@ -1,7 +1,7 @@
 import { AuthShell } from "@/components/auth/auth-shell";
-import { LoginForm } from "@/components/auth/login-form";
+import { EnterOtpForm } from "@/components/auth/enter-otp-form";
 
-export default async function SignInPage({
+export default async function EnterOtpPage({
   searchParams,
 }: {
   searchParams: Promise<{ email?: string | string[] }>;
@@ -10,8 +10,8 @@ export default async function SignInPage({
   const email = typeof params.email === "string" ? params.email : "";
 
   return (
-    <AuthShell bodyClassName="max-w-[498px]">
-      <LoginForm initialEmail={email} />
+    <AuthShell title="Enter OTP" bodyClassName="max-w-[500px]">
+      <EnterOtpForm initialEmail={email} />
     </AuthShell>
   );
 }
