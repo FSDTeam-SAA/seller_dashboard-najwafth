@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { MetricCard, Modal, ModalHeader, PageFrame, SectionCard, StatusPill } from "@/components/seller/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createDriverRequest, getMyDriverRequests, getSellerOverview } from "@/lib/api";
+import { createDriverRequest, getMyDriverRequests, getSellerOrders, getSellerOverview } from "@/lib/api";
 import { formatDate, toText } from "@/lib/utils";
 
 type Driver = {
@@ -26,6 +26,25 @@ type Driver = {
   orderDate?: string;
 };
 
+type SellerOrder = {
+  _id: string;
+  orderId: string;
+  totalAmount?: number;
+  address?: string;
+  createdAt?: string;
+  status?: string;
+  customer?: {
+    name?: string;
+  };
+  items?: Array<{
+    quantity?: number;
+  }>;
+};
+
+type SellerOrdersResponse = {
+  orders: SellerOrder[];
+};
+
 const emptyForm = {
   shopName: "",
   shopPhone: "",
@@ -38,6 +57,13 @@ const emptyForm = {
   customerLocation: "",
   message: "",
 };
+
+function toDateInputValue(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
 
 export default function DriverPage() {
   const queryClient = useQueryClient();
@@ -52,8 +78,54 @@ export default function DriverPage() {
     queryKey: ["seller-drivers"],
     queryFn: getMyDriverRequests,
   });
+  const ordersQuery = useQuery<SellerOrdersResponse>({
+    queryKey: ["seller-orders", "driver-request"],
+    queryFn: () => getSellerOrders({ page: 1, limit: 100 }),
+    enabled: open,
+  });
 
   const list = (Array.isArray(driversQuery.data) ? driversQuery.data : driversQuery.data?.requests) || [];
+  const orders = ordersQuery.data?.orders || [];
+  const assignedOrderIds = new Set(
+    list
+      .map((driver) => {
+        if (driver.orderId && typeof driver.orderId === "object") {
+          return driver.orderId.orderId;
+        }
+        return undefined;
+      })
+      .filter(Boolean),
+  );
+  const availableOrders = orders.filter((order) => !assignedOrderIds.has(order.orderId));
+
+  const handleOrderSelect = (selectedOrderId: string) => {
+    const selectedOrder = availableOrders.find((order) => order.orderId === selectedOrderId);
+
+    if (!selectedOrder) {
+      setForm((prev) => ({
+        ...prev,
+        orderId: "",
+        orderDate: "",
+        customerName: "",
+        totalItems: "",
+        price: "",
+        customerLocation: "",
+      }));
+      return;
+    }
+
+    const totalItems = (selectedOrder.items || []).reduce((sum, item) => sum + (item.quantity || 0), 0);
+
+    setForm((prev) => ({
+      ...prev,
+      orderId: selectedOrder.orderId,
+      orderDate: toDateInputValue(selectedOrder.createdAt),
+      customerName: selectedOrder.customer?.name || "",
+      totalItems: totalItems > 0 ? String(totalItems) : "",
+      price: selectedOrder.totalAmount != null ? String(selectedOrder.totalAmount) : "",
+      customerLocation: selectedOrder.address || "",
+    }));
+  };
 
   const createMutation = useMutation({
     mutationFn: createDriverRequest,
@@ -173,12 +245,27 @@ export default function DriverPage() {
             <Input value={form.totalItems} onChange={(e) => setForm({ ...form, totalItems: e.target.value })} placeholder="4 Books" />
           </div>
           <div>
-            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Order ID *</label>
-            <Input value={form.orderId} onChange={(e) => setForm({ ...form, orderId: e.target.value })} placeholder="ORD-9102" />
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Order *</label>
+            <select
+              className="h-12 w-full rounded-[10px] border border-[#cfd4dc] bg-white px-4 text-[14px] text-[#202124]"
+              value={form.orderId}
+              onChange={(e) => handleOrderSelect(e.target.value)}
+              disabled={ordersQuery.isLoading}
+            >
+              <option value="">{ordersQuery.isLoading ? "Loading orders..." : "Select order"}</option>
+              {availableOrders.map((order) => (
+                <option key={order._id} value={order.orderId}>
+                  {order.orderId} - {order.customer?.name || "Customer"}{order.status ? ` (${order.status})` : ""}
+                </option>
+              ))}
+            </select>
+            {!ordersQuery.isLoading && availableOrders.length === 0 ? (
+              <p className="mt-2 text-[12px] text-[#5b6371]">No unassigned seller orders available.</p>
+            ) : null}
           </div>
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Price *</label>
-            <Input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="$12.00" />
+            <Input value={form.price} readOnly placeholder="$12.00" />
           </div>
           <div className="md:col-span-2">
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Location *</label>
