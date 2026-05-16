@@ -5,6 +5,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Seller Dashboard",
   description: "Responsive seller dashboard for BookStore Hub",
+  icons: {
+    icon: "/assets/logo-icon.png",
+    shortcut: "/assets/logo-icon.png",
+    apple: "/assets/logo-icon.png",
+  },
 };
 
 export default function RootLayout({

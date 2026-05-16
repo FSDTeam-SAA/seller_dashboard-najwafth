@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -37,6 +38,11 @@ export default function SettingsPage() {
   });
 
   const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [showPasswords, setShowPasswords] = useState({
+    currentPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+  });
 
   return (
     <PageFrame title="Setting" subtitle="Edit your personal information">
@@ -82,15 +88,72 @@ export default function SettingsPage() {
         >
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Current Password</label>
-            <Input type="password" value={form.currentPassword} onChange={(e) => setForm({ ...form, currentPassword: e.target.value })} className="bg-white" />
+            <div className="relative">
+              <Input
+                type={showPasswords.currentPassword ? "text" : "password"}
+                value={form.currentPassword}
+                onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
+                className="bg-white pr-12"
+              />
+              <button
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6b7280]"
+                onClick={() =>
+                  setShowPasswords((prev) => ({
+                    ...prev,
+                    currentPassword: !prev.currentPassword,
+                  }))
+                }
+                type="button"
+              >
+                {showPasswords.currentPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">New Password</label>
-            <Input type="password" value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} className="bg-white" />
+            <div className="relative">
+              <Input
+                type={showPasswords.newPassword ? "text" : "password"}
+                value={form.newPassword}
+                onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+                className="bg-white pr-12"
+              />
+              <button
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6b7280]"
+                onClick={() =>
+                  setShowPasswords((prev) => ({
+                    ...prev,
+                    newPassword: !prev.newPassword,
+                  }))
+                }
+                type="button"
+              >
+                {showPasswords.newPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+              </button>
+            </div>
           </div>
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Confirm New Password</label>
-            <Input type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} className="bg-white" />
+            <div className="relative">
+              <Input
+                type={showPasswords.confirmPassword ? "text" : "password"}
+                value={form.confirmPassword}
+                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                className="bg-white pr-12"
+              />
+              <button
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6b7280]"
+                onClick={() =>
+                  setShowPasswords((prev) => ({
+                    ...prev,
+                    confirmPassword: !prev.confirmPassword,
+                  }))
+                }
+                type="button"
+              >
+                {showPasswords.confirmPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
+              </button>
+            </div>
           </div>
           <Button type="submit" className="bg-[#6d98c0] hover:bg-[#5f88ae]" disabled={passwordMutation.isPending}>
             {passwordMutation.isPending ? "Saving..." : "Save Changes"}
