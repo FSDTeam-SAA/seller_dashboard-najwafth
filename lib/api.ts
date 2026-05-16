@@ -14,14 +14,16 @@ export async function getSellerOverview() {
 
 export async function getSellerOrders(params: { page: number; limit: number; status?: string }) {
   const response = await apiClient.get("/order", { params });
-  const orders = response.data.data || [];
+  const payload = response.data.data || {};
+  const orders = Array.isArray(payload) ? payload : payload.orders || [];
+  const pagination = Array.isArray(payload) ? undefined : payload.pagination;
   return {
     orders,
     pagination: {
-      total: orders.length < params.limit && params.page === 1 ? orders.length : params.page * params.limit + (orders.length === params.limit ? 1 : 0),
-      page: params.page,
-      limit: params.limit,
-      totalPages: orders.length === params.limit ? params.page + 1 : params.page,
+      total: pagination?.total ?? orders.length,
+      page: pagination?.page ?? params.page,
+      limit: pagination?.limit ?? params.limit,
+      totalPages: pagination?.totalPages ?? 1,
     } satisfies PaginationMeta,
   };
 }
@@ -37,8 +39,11 @@ export async function getSellerBooks(params: {
   return response.data.data;
 }
 
-export async function createBook(payload: Record<string, unknown>) {
-  const response = await apiClient.post("/books/add", payload);
+export async function createBook(payload: Record<string, unknown> | FormData) {
+  const isForm = typeof FormData !== "undefined" && payload instanceof FormData;
+  const response = await apiClient.post("/books/add", payload, {
+    headers: isForm ? { "Content-Type": "multipart/form-data" } : undefined,
+  });
   return response.data.data;
 }
 
@@ -101,7 +106,7 @@ export async function changePassword(payload: {
 
 export async function updateBook(id: string, payload: Record<string, unknown> | FormData) {
   const isForm = typeof FormData !== "undefined" && payload instanceof FormData;
-  const response = await apiClient.patch(`/books/${id}`, payload, {
+  const response = await apiClient.put(`/books/${id}`, payload, {
     headers: isForm ? { "Content-Type": "multipart/form-data" } : undefined,
   });
   return response.data.data;
@@ -134,16 +139,7 @@ export async function updateMyShop(formData: FormData) {
   return response.data.data;
 }
 
-export async function getShopDriverRequests(shopId: string) {
-  const response = await apiClient.get(`/driver-request/driver-requests/shop/${shopId}`);
-  return response.data.data;
-}
-
-export async function getMyDriverRequests(shopId?: string) {
-  if (shopId) {
-    const response = await apiClient.get(`/driver-request/driver-requests/shop/${shopId}`);
-    return response.data.data;
-  }
+export async function getMyDriverRequests() {
   const response = await apiClient.get("/driver-request/driver-requests");
   return response.data.data;
 }
@@ -154,16 +150,6 @@ export async function createDriverRequest(payload: Record<string, unknown>) {
 }
 
 const silent = { headers: { "x-skip-toast": "1" } };
-
-type SellerOrder = {
-  _id?: string;
-  orderId?: string;
-  createdAt?: string;
-  totalAmount?: number;
-  status?: string;
-  items?: unknown[];
-  customer?: { _id?: string; name?: string; email?: string; phone?: string; avatar?: { url?: string }; image?: string };
-};
 
 export async function getSellerUsers(params: { page: number; limit: number }) {
   try {
@@ -183,51 +169,21 @@ export async function getSellerReviews(params: { page: number; limit: number }) 
   }
 }
 
-export async function getSellerSales(_params: { period?: "week" | "month" | "year" }) {
+export async function getSellerSales(params: { period?: "week" | "month" | "year" }) {
   try {
+    void params;
     const overview = await getSellerOverview();
-    const orders: SellerOrder[] = overview?.recentOrders || [];
-    const completed = orders.filter((o) => o.status === "delivered").length;
-    const totalRevenue = orders
-      .filter((o) => o.status === "delivered")
-      .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const completed = overview?.metrics?.totalCompletedOrders ?? 0;
+    const totalRevenue = overview?.metrics?.totalRevenue ?? 0;
     const avg = completed > 0 ? totalRevenue / completed : 0;
-    type BookEntry = { _id?: string; product?: unknown; quantity?: number };
-    const productMap = new Map<string, { _id: string; soldCount: number; product: BookEntry["product"] }>();
-    for (const order of orders) {
-      for (const item of (order.items || []) as BookEntry[]) {
-        const product = item.product as { _id?: string; title?: string; coverImage?: string; image?: { url?: string }; price?: number; rating?: number; author?: string } | undefined;
-        const id = (product?._id || "").toString();
-        if (!id) continue;
-        const existing = productMap.get(id);
-        if (existing) existing.soldCount += item.quantity || 1;
-        else productMap.set(id, { _id: id, soldCount: item.quantity || 1, product });
-      }
-    }
-    const topBooks = Array.from(productMap.values())
-      .sort((a, b) => b.soldCount - a.soldCount)
-      .slice(0, 10)
-      .map((entry) => {
-        const p = entry.product as { _id?: string; title?: string; author?: string; coverImage?: string; image?: { url?: string }; price?: number; rating?: number } | undefined;
-        return {
-          _id: entry._id,
-          title: p?.title,
-          author: p?.author,
-          price: p?.price,
-          rating: p?.rating,
-          image: p?.image,
-          coverImage: p?.coverImage,
-          soldCount: entry.soldCount,
-        };
-      });
     return {
       metrics: {
-        totalRevenue: overview?.metrics?.totalRevenue ?? totalRevenue,
-        completedOrders: overview?.metrics?.totalCompletedOrders ?? completed,
+        totalRevenue,
+        completedOrders: completed,
         avgOrderValue: Number(avg.toFixed(2)),
       },
       analysis: overview?.salesAnalysis || [],
-      topBooks,
+      topBooks: overview?.topBooks || [],
     };
   } catch {
     return undefined;

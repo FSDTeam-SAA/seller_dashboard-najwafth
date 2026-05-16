@@ -53,7 +53,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <p className="text-[20px] font-semibold text-[#202124]">{profile.name || "Rani"}</p>
-            <p className="text-[14px] text-[#5b6371]">@{profile.role || "Admin"}</p>
+            <p className="text-[14px] text-[#5b6371]">@{profile.role || "seller"}</p>
           </div>
           <input
             type="file"

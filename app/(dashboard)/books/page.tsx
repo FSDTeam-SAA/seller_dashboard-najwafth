@@ -9,7 +9,7 @@ import { Modal, ModalHeader, PageFrame } from "@/components/seller/primitives";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { createBook, deleteBook, getCategories, getMyShop, getSellerBooks, publishBooks, updateBook } from "@/lib/api";
+import { createBook, deleteBook, getCategories, getProfile, getSellerBooks, publishBooks, updateBook } from "@/lib/api";
 import { cn, formatCurrency, getAssetUrl } from "@/lib/utils";
 
 type Category = { _id: string; name: string };
@@ -25,9 +25,9 @@ type Book = {
   coverImage?: string;
   image?: { url?: string };
   category?: { _id?: string; name?: string };
-  location?: string;
 };
 type BooksResp = { books?: Book[]; meta?: { totalPage?: number } };
+type Profile = { _id?: string };
 
 const empty = {
   title: "",
@@ -110,7 +110,7 @@ function BookForm({
               In Stock
               <input
                 type="checkbox"
-                className="h-5 w-9 appearance-none rounded-full bg-[#cfd4dc] outline-none transition checked:bg-[#3d8ef5] relative cursor-pointer before:absolute before:left-0.5 before:top-0.5 before:size-4 before:rounded-full before:bg-white before:transition checked:before:translate-x-4"
+                className="relative h-5 w-9 cursor-pointer appearance-none rounded-full bg-[#cfd4dc] outline-none transition before:absolute before:left-0.5 before:top-0.5 before:size-4 before:rounded-full before:bg-white before:transition checked:bg-[#3d8ef5] checked:before:translate-x-4"
                 checked={form.inStock}
                 onChange={(e) => setForm({ ...form, inStock: e.target.checked })}
               />
@@ -131,16 +131,21 @@ function BookForm({
         <Button variant="outline" onClick={onCancel} type="button">
           Cancel
         </Button>
-        <Button
-          className="bg-[#6d98c0] hover:bg-[#5f88ae]"
-          disabled={isPending}
-          onClick={() => onSubmit(form, file)}
-          type="button"
-        >
+        <Button className="bg-[#6d98c0] hover:bg-[#5f88ae]" disabled={isPending} onClick={() => onSubmit(form, file)} type="button">
           {isPending ? "Saving..." : "Save"}
         </Button>
       </div>
     </>
+  );
+}
+
+function BooksGridSkeleton() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <Card key={index} className="h-[380px] rounded-[14px] border-[#e3e6ec] bg-white p-3 shadow-none" />
+      ))}
+    </div>
   );
 }
 
@@ -150,18 +155,25 @@ export default function BooksPage() {
   const [editing, setEditing] = useState<Book | null>(null);
   const [openPublish, setOpenPublish] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  const shopQuery = useQuery<{ _id?: string }>({ queryKey: ["my-shop"], queryFn: getMyShop });
-  const shopId = shopQuery.data?._id;
-  const booksQuery = useQuery<BooksResp>({
-    queryKey: ["seller-books", shopId],
-    queryFn: () => getSellerBooks({ page: 1, limit: 24, shopId }),
-    enabled: !!shopId,
+  const profileQuery = useQuery<Profile>({
+    queryKey: ["seller-profile"],
+    queryFn: getProfile,
   });
-  const categoriesQuery = useQuery<Category[]>({ queryKey: ["seller-categories"], queryFn: getCategories });
+  const sellerId = profileQuery.data?._id;
+
+  const booksQuery = useQuery<BooksResp>({
+    queryKey: ["seller-books", sellerId],
+    queryFn: () => getSellerBooks({ page: 1, limit: 24, shopId: sellerId }),
+    enabled: !!sellerId,
+  });
+  const categoriesQuery = useQuery<Category[]>({
+    queryKey: ["seller-categories"],
+    queryFn: getCategories,
+  });
 
   const books = booksQuery.data?.books || [];
   const categories = categoriesQuery.data || [];
+  const isBooksLoading = profileQuery.isLoading || booksQuery.isLoading;
 
   const createMutation = useMutation({
     mutationFn: createBook,
@@ -206,6 +218,11 @@ export default function BooksPage() {
   };
 
   const submitForm = (form: typeof empty, file: File | null, id?: string) => {
+    if (!form.title.trim() || !form.author.trim() || !form.price || !form.category) {
+      toast.error("Title, author, category, and price are required.");
+      return;
+    }
+
     const fd = new FormData();
     fd.set("title", form.title);
     fd.set("author", form.author);
@@ -214,11 +231,13 @@ export default function BooksPage() {
     if (form.category) fd.set("category", form.category);
     fd.set("stock", String(form.inStock));
     if (file) fd.set("coverImage", file);
+
     if (id) {
       updateMutation.mutate({ id, payload: fd });
-    } else {
-      createMutation.mutate(fd as unknown as Record<string, unknown>);
+      return;
     }
+
+    createMutation.mutate(fd);
   };
 
   return (
@@ -230,54 +249,66 @@ export default function BooksPage() {
           <Button className="bg-[#6d98c0] hover:bg-[#5f88ae]" onClick={() => setOpenAdd(true)}>
             <Plus className="size-4" /> Add New Book
           </Button>
-          <Button variant="outline" onClick={() => setOpenPublish(true)}>
+          <Button variant="outline" onClick={() => setOpenPublish(true)} disabled={books.length === 0}>
             <Upload className="size-4" /> Published
           </Button>
         </div>
       }
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {(books.length > 0 ? books : Array.from({ length: 8 }).map((_, i) => ({ _id: String(i) } as Book))).map((book) => {
-          const cover = getAssetUrl(book.image || book.coverImage);
-          const inStock = book.inStock ?? book.stock ?? true;
-          return (
-            <Card key={book._id} className="overflow-hidden rounded-[14px] border-[#e3e6ec] bg-white p-3 shadow-none">
-              <div className="relative aspect-[4/3] overflow-hidden rounded-[10px] bg-[#e3e6ec]">
-                {cover ? <Image src={cover} alt={book.title || "Book"} fill className="object-cover" sizes="320px" /> : null}
-                {!inStock ? (
-                  <span className="absolute right-2 top-2 rounded-md bg-[#103670] px-2 py-1 text-[11px] font-semibold text-white">Stock out</span>
-                ) : (
-                  <span className="absolute right-2 top-2 rounded-md bg-[#103670] px-2 py-1 text-[11px] font-semibold text-white">In Stock</span>
-                )}
-              </div>
-              <div className="mt-3 space-y-1">
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-[16px] font-semibold text-[#202124]">{book.title || "The Great Gatsby"}</h3>
-                  <span className="inline-flex items-center gap-0.5 text-[12px] text-[#f59e0b]">
-                    <Star className="size-3.5 fill-current" /> {book.rating ?? 4.8}
+      {isBooksLoading ? <BooksGridSkeleton /> : null}
+
+      {!isBooksLoading && books.length === 0 ? (
+        <Card className="rounded-[18px] border-dashed border-[#cfd4dc] bg-white p-10 text-center shadow-none">
+          <h2 className="text-[20px] font-semibold text-[#202124]">No books yet</h2>
+          <p className="mt-2 text-[15px] text-[#5b6371]">Create books from seller dashboard and they will show here.</p>
+          <div className="mt-6">
+            <Button className="bg-[#6d98c0] hover:bg-[#5f88ae]" onClick={() => setOpenAdd(true)}>
+              <Plus className="size-4" /> Add New Book
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {!booksQuery.isLoading && books.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {books.map((book) => {
+            const cover = getAssetUrl(book.image || book.coverImage);
+            const inStock = book.inStock ?? book.stock ?? true;
+
+            return (
+              <Card key={book._id} className="overflow-hidden rounded-[14px] border-[#e3e6ec] bg-white p-3 shadow-none">
+                <div className="relative aspect-[4/3] overflow-hidden rounded-[10px] bg-[#e3e6ec]">
+                  {cover ? <Image src={cover} alt={book.title || "Book"} fill className="object-cover" sizes="320px" /> : null}
+                  <span className="absolute right-2 top-2 rounded-md bg-[#103670] px-2 py-1 text-[11px] font-semibold text-white">
+                    {inStock ? "In Stock" : "Stock out"}
                   </span>
                 </div>
-                <p className="text-[13px] text-[#5b6371]">{book.author || "F. Scott Fitzgerald"}</p>
-                <p className="flex items-center gap-1 text-[12px] text-[#5b6371]">
-                  <MapPin className="size-3.5 text-[#3d8ef5]" /> {book.location || "123 Library, Book City"}
-                </p>
-                <p className="text-[14px] font-semibold text-[#3d8ef5]">$ {(book.price ?? 12.99).toFixed(2)}</p>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="outline" className="border-[#3d8ef5] text-[#3d8ef5]" onClick={() => setEditing(book)}>
-                  <Pencil className="size-4" /> Edit
-                </Button>
-                <Button
-                  className="bg-[#fde7e7] text-[#d92d20] hover:bg-[#fbd1d1]"
-                  onClick={() => deleteMutation.mutate(book._id)}
-                >
-                  <Trash2 className="size-4" /> Delete
-                </Button>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+                <div className="mt-3 space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="text-[16px] font-semibold text-[#202124]">{book.title || "Untitled book"}</h3>
+                    <span className="inline-flex items-center gap-0.5 text-[12px] text-[#f59e0b]">
+                      <Star className="size-3.5 fill-current" /> {book.rating ?? 0}
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-[#5b6371]">{book.author || "Unknown author"}</p>
+                  <p className="flex items-center gap-1 text-[12px] text-[#5b6371]">
+                    <MapPin className="size-3.5 text-[#3d8ef5]" /> {book.category?.name || "Uncategorized"}
+                  </p>
+                  <p className="text-[14px] font-semibold text-[#3d8ef5]">$ {(book.price ?? 0).toFixed(2)}</p>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <Button variant="outline" className="border-[#3d8ef5] text-[#3d8ef5]" onClick={() => setEditing(book)}>
+                    <Pencil className="size-4" /> Edit
+                  </Button>
+                  <Button className="bg-[#fde7e7] text-[#d92d20] hover:bg-[#fbd1d1]" onClick={() => deleteMutation.mutate(book._id)}>
+                    <Trash2 className="size-4" /> Delete
+                  </Button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      ) : null}
 
       <Modal open={openAdd} onClose={() => setOpenAdd(false)} className="max-w-[820px]">
         <BookForm
@@ -324,6 +355,7 @@ export default function BooksPage() {
           {books.map((book) => {
             const cover = getAssetUrl(book.image || book.coverImage);
             const isSelected = selected.has(book._id);
+
             return (
               <button
                 key={book._id}
@@ -337,9 +369,9 @@ export default function BooksPage() {
                 <div className="relative aspect-[4/3] overflow-hidden rounded-[10px] bg-[#e3e6ec]">
                   {cover ? <Image src={cover} alt={book.title || ""} fill className="object-cover" sizes="240px" /> : null}
                 </div>
-                <h3 className="mt-2 text-[14px] font-semibold text-[#202124]">{book.title || "The Great Gatsby"}</h3>
-                <p className="text-[12px] text-[#5b6371]">{book.author || "F. Scott Fitzgerald"}</p>
-                <p className="mt-1 text-[14px] font-semibold text-[#3d8ef5]">{formatCurrency(book.price || 12.99)}</p>
+                <h3 className="mt-2 text-[14px] font-semibold text-[#202124]">{book.title || "Untitled book"}</h3>
+                <p className="text-[12px] text-[#5b6371]">{book.author || "Unknown author"}</p>
+                <p className="mt-1 text-[14px] font-semibold text-[#3d8ef5]">{formatCurrency(book.price || 0)}</p>
                 {isSelected ? (
                   <span className="absolute right-3 top-3 inline-flex size-6 items-center justify-center rounded-full bg-[#3d8ef5] text-white">+</span>
                 ) : null}

@@ -7,19 +7,23 @@ import { toast } from "sonner";
 import { MetricCard, Modal, ModalHeader, PageFrame, SectionCard, StatusPill } from "@/components/seller/primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createDriverRequest, getMyDriverRequests, getMyShop, getSellerOverview } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { createDriverRequest, getMyDriverRequests, getSellerOverview } from "@/lib/api";
+import { formatDate, toText } from "@/lib/utils";
 
 type Driver = {
   _id: string;
+  customerName?: string;
+  shopName?: string;
   name?: string;
   phone?: string;
   vehicle?: string;
   vehicleId?: string;
   address?: string;
+  location?: string;
   status?: string;
-  orderId?: string;
+  orderId?: string | { orderId?: string; _id?: string };
   scheduledAt?: string;
+  orderDate?: string;
 };
 
 const emptyForm = {
@@ -44,12 +48,9 @@ export default function DriverPage() {
     queryKey: ["seller-overview"],
     queryFn: getSellerOverview,
   });
-  const shopQuery = useQuery<{ _id?: string }>({ queryKey: ["my-shop"], queryFn: getMyShop });
-  const shopId = shopQuery.data?._id;
   const driversQuery = useQuery<{ requests?: Driver[] } | Driver[]>({
-    queryKey: ["seller-drivers", shopId],
-    queryFn: () => getMyDriverRequests(shopId),
-    enabled: !!shopId,
+    queryKey: ["seller-drivers"],
+    queryFn: getMyDriverRequests,
   });
 
   const list = (Array.isArray(driversQuery.data) ? driversQuery.data : driversQuery.data?.requests) || [];
@@ -77,14 +78,14 @@ export default function DriverPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <MetricCard
           label="Orders Today"
-          value={overview.data?.metrics?.ordersToday ?? 262}
+          value={overview.data?.metrics?.ordersToday ?? 0}
           icon={<ShoppingCart className="size-5" />}
           iconBg="bg-[#3d8ef5]"
           iconColor="text-white"
         />
         <MetricCard
           label="Completed Orders"
-          value={overview.data?.metrics?.totalCompletedOrders ?? 1700}
+          value={overview.data?.metrics?.totalCompletedOrders ?? 0}
           icon={<ShoppingCart className="size-5" />}
           iconBg="bg-[#3d8ef5]"
           iconColor="text-white"
@@ -96,50 +97,56 @@ export default function DriverPage() {
         <p className="text-[14px] text-[#5b6371]">Drivers assigned to handle and deliver current orders.</p>
 
         <div className="mt-4 space-y-3">
-          {(list.length > 0 ? list : Array.from({ length: 2 }).map((_, i) => ({ _id: String(i) } as Driver))).map((driver) => {
-            const initials = (driver.name || "Rahim Uddin").split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
+          {list.map((driver) => {
+            const displayName = driver.name || driver.customerName || driver.shopName || "Driver request";
+            const initials = displayName.split(" ").map((s) => s[0]).join("").slice(0, 2).toUpperCase();
             return (
               <div key={driver._id} className="flex items-center gap-4 rounded-[12px] bg-white p-4">
                 <div className="flex size-12 items-center justify-center rounded-full bg-[#3d8ef5] text-[16px] font-semibold text-white">
                   {initials}
                 </div>
                 <div className="flex-1 grid gap-1 text-[14px]">
-                  <p className="text-[16px] font-semibold text-[#202124]">{driver.name || "Rahim Uddin"}</p>
+                  <p className="text-[16px] font-semibold text-[#202124]">{displayName}</p>
                   <p className="text-[#5b6371]">
-                    Vehicle: <span className="text-[#3d8ef5]">{driver.vehicle || "Bick"}</span>
+                    Vehicle: <span className="text-[#3d8ef5]">{driver.vehicle || "N/A"}</span>
                   </p>
                   <p className="text-[#5b6371]">
-                    ID: <span className="text-[#3d8ef5]">{driver.vehicleId || "ABC-123"}</span>
+                    ID: <span className="text-[#3d8ef5]">{driver.vehicleId || "N/A"}</span>
                   </p>
                   <p className="flex items-center gap-1 text-[#3d8ef5]">
-                    <Phone className="size-3.5" /> {driver.phone || "01XXXXXXXXX"}
+                    <Phone className="size-3.5" /> {driver.phone || "N/A"}
                   </p>
                   <p className="flex items-start gap-1 text-[#5b6371]">
                     <MapPin className="size-3.5 text-[#3d8ef5]" />
-                    Delivery Address {driver.address || "456 Park Avenue, Dhaka 1207"}
+                    Delivery Address {driver.location || driver.address || "N/A"}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <StatusPill status={driver.status || "pending"} />
-                  <p className="text-[#3d8ef5]">{driver.orderId || "ORD-9102"}</p>
+                  <p className="text-[#3d8ef5]">{toText(driver.orderId, "N/A")}</p>
                   <p className="flex items-center gap-1 text-[12px] text-[#5b6371]">
-                    <Clock className="size-3.5" /> {driver.scheduledAt ? formatDate(driver.scheduledAt) : "10:30 AM"}
+                    <Clock className="size-3.5" /> {driver.scheduledAt ? formatDate(driver.scheduledAt) : driver.orderDate ? formatDate(driver.orderDate) : "N/A"}
                   </p>
                 </div>
               </div>
             );
           })}
+          {list.length === 0 ? (
+            <div className="rounded-[12px] border border-dashed border-[#cfd4dc] bg-white px-4 py-10 text-center text-[#5b6371]">
+              No driver requests yet
+            </div>
+          ) : null}
         </div>
       </SectionCard>
 
       <Modal open={open} onClose={() => setOpen(false)} className="max-w-[820px]">
-        <ModalHeader title="Add new request" subtitle="New Request For Driver for driver" onClose={() => setOpen(false)} />
+        <ModalHeader title="Add new request" subtitle="Submit a delivery request for one of your orders." onClose={() => setOpen(false)} />
 
         <h3 className="mb-3 text-[16px] font-semibold text-[#3d8ef5]">Books Store Information</h3>
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Books Store Name *</label>
-            <Input value={form.shopName} onChange={(e) => setForm({ ...form, shopName: e.target.value })} placeholder="ORD-9102" />
+            <Input value={form.shopName} onChange={(e) => setForm({ ...form, shopName: e.target.value })} placeholder="Books on wheels" />
           </div>
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Phone Number*</label>
@@ -159,7 +166,7 @@ export default function DriverPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Customer Name *</label>
-            <Input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} placeholder="ORD-9102" />
+            <Input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} placeholder="Customer name" />
           </div>
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Total Items *</label>
@@ -202,7 +209,7 @@ export default function DriverPage() {
                 location: form.location,
                 orderDate: form.orderDate,
                 customerName: form.customerName,
-                totalItems: form.totalItems,
+                item: form.totalItems,
                 orderId: form.orderId,
                 price: form.price,
                 customerLocation: form.customerLocation,

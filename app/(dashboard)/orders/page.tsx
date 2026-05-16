@@ -14,6 +14,7 @@ type Order = {
   _id: string;
   orderId?: string;
   createdAt?: string;
+  address?: string;
   totalAmount?: number;
   subtotal?: number;
   deliveryFee?: number;
@@ -28,14 +29,14 @@ type Order = {
 
 type OrdersResponse = {
   orders?: Order[];
-  pagination?: { totalPages: number };
+  pagination?: { total: number; page: number; totalPages: number };
 };
 
 const tabs = [
   { id: "all", label: "All" },
   { id: "pending", label: "Pending" },
-  { id: "processing", label: "Processing" },
-  { id: "picked", label: "Picked" },
+  { id: "in_progress", label: "Processing" },
+  { id: "shipped", label: "Picked" },
   { id: "delivered", label: "Delivered" },
 ] as const;
 
@@ -101,45 +102,47 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {(orders.length > 0 ? orders : Array.from({ length: 7 }).map((_, i) => ({ _id: String(i) } as Order))).map((order) => (
+              {orders.map((order) => (
                 <tr key={order._id} className="border-t border-[#f0e7d4]">
-                  <td className="py-3 text-[#202124]">{toText(order.orderId, "ORD-9102")}</td>
+                  <td className="py-3 text-[#202124]">{toText(order.orderId, "N/A")}</td>
                   <td className="py-3 text-[#5b6371]">
-                    <p>{order.createdAt ? formatDate(order.createdAt) : "4/8/2026"}</p>
-                    <p className="text-[12px]">09:29 AM</p>
+                    <p>{order.createdAt ? formatDate(order.createdAt) : "N/A"}</p>
+                    <p className="text-[12px]">{order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</p>
                   </td>
-                  <td className="py-3 text-center text-[#5b6371]">{toText(order.customer?.email || order.email, "tim.jennings@example.com")}</td>
-                  <td className="py-3 text-[#5b6371]">{toText(order.customer?.phone || order.phone, "(207) 555-0119")}</td>
-                  <td className="py-3 text-[#5b6371]">{order.items?.length || 4} books</td>
-                  <td className="py-3 text-[#202124]">{formatCurrency(order.totalAmount || 19.99)}</td>
+                  <td className="py-3 text-center text-[#5b6371]">{toText(order.customer?.email || order.email, "N/A")}</td>
+                  <td className="py-3 text-[#5b6371]">{toText(order.customer?.phone || order.phone, "N/A")}</td>
+                  <td className="py-3 text-[#5b6371]">{order.items?.length || 0} books</td>
+                  <td className="py-3 text-[#202124]">{formatCurrency(order.totalAmount || 0)}</td>
                   <td className="py-3">
-                    <span className="inline-flex items-center gap-0.5 text-[#f59e0b]">
-                      {Array.from({ length: 4 }).map((_, idx) => (
-                        <svg key={idx} viewBox="0 0 20 20" fill="currentColor" className="size-4">
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 0 0 .95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.366 2.446a1 1 0 0 0-.364 1.118l1.287 3.957c.3.922-.755 1.688-1.54 1.118L10 15.347l-3.954 2.677c-.785.57-1.84-.196-1.54-1.118l1.287-3.957a1 1 0 0 0-.364-1.118L2.063 9.385c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 0 0 .95-.69l1.286-3.958Z" />
-                        </svg>
-                      ))}
-                      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4">
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.286 3.957a1 1 0 0 0 .95.69h4.162c.969 0 1.371 1.24.588 1.81l-3.366 2.446a1 1 0 0 0-.364 1.118l1.287 3.957c.3.922-.755 1.688-1.54 1.118L10 15.347l-3.954 2.677c-.785.57-1.84-.196-1.54-1.118l1.287-3.957a1 1 0 0 0-.364-1.118L2.063 9.385c-.783-.57-.38-1.81.588-1.81h4.162a1 1 0 0 0 .95-.69l1.286-3.958Z" />
-                      </svg>
-                    </span>
+                    <span className="text-[#5b6371]">-</span>
                   </td>
                   <td className="py-3">
                     <StatusPill status={order.status || "pending"} />
                   </td>
                   <td className="py-3 text-right">
-                    <Button className="bg-[#3d8ef5] hover:bg-[#2f7be0]" onClick={() => setViewing(order._id)}>
+                    <Button className="bg-[#3d8ef5] hover:bg-[#2f7be0]" onClick={() => setViewing(order.orderId || order._id)}>
                       View <Eye className="size-4" />
                     </Button>
                   </td>
                 </tr>
               ))}
+              {orders.length === 0 ? (
+                <tr className="border-t border-[#f0e7d4]">
+                  <td colSpan={9} className="py-8 text-center text-[#5b6371]">
+                    No orders found
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
         <div className="mt-4 flex items-center justify-between text-[14px] text-[#5b6371]">
-          <span>Showing 1 to 12 of 20 results</span>
-          <Pagination page={page} totalPages={data?.pagination?.totalPages || 20} onPageChange={setPage} />
+          <span>
+            {orders.length > 0
+              ? `Showing ${((data?.pagination?.page || page) - 1) * 12 + 1} to ${((data?.pagination?.page || page) - 1) * 12 + orders.length} of ${data?.pagination?.total || orders.length} results`
+              : "Showing 0 results"}
+          </span>
+          <Pagination page={page} totalPages={data?.pagination?.totalPages || 1} onPageChange={setPage} />
         </div>
       </SectionCard>
 
@@ -167,14 +170,14 @@ export default function OrdersPage() {
                   {status === "pending" ? (
                     <Button
                       className="bg-[#3d8ef5] hover:bg-[#2f7be0]"
-                      onClick={() => statusMutation.mutate({ id: o._id, status: "processing" })}
+                      onClick={() => statusMutation.mutate({ id: o.orderId || o._id, status: "in_progress" })}
                     >
                       <ShieldCheck className="size-4" /> Mark as Ready
                     </Button>
                   ) : status !== "delivered" ? (
                     <Button
                       className="bg-[#16934b] hover:bg-[#137a3d]"
-                      onClick={() => statusMutation.mutate({ id: o._id, status: "delivered" })}
+                      onClick={() => statusMutation.mutate({ id: o.orderId || o._id, status: "delivered" })}
                     >
                       <ShieldCheck className="size-4" /> Mark as Delivered
                     </Button>
@@ -186,9 +189,9 @@ export default function OrdersPage() {
                     <User className="size-5" /> Customer Details
                   </h3>
                   <div className="mt-3 space-y-2 text-[14px] text-[#202124]">
-                    <p className="flex items-center gap-2"><User className="size-4 text-[#5b6371]" /> Name: <span className="font-semibold">{o.customer?.name || "Bob Smith"}</span></p>
-                    <p className="flex items-center gap-2"><Phone className="size-4 text-[#5b6371]" /> Phone Number: <span className="font-semibold">{o.customer?.phone || "555-0102"}</span></p>
-                    <p className="flex items-center gap-2"><MapPin className="size-4 text-[#5b6371]" /> Delivery Address: <span className="font-semibold">{o.customer?.address || "456 Oak Ave, Townsburg"}</span></p>
+                    <p className="flex items-center gap-2"><User className="size-4 text-[#5b6371]" /> Name: <span className="font-semibold">{o.customer?.name || "N/A"}</span></p>
+                    <p className="flex items-center gap-2"><Phone className="size-4 text-[#5b6371]" /> Phone Number: <span className="font-semibold">{o.customer?.phone || "N/A"}</span></p>
+                    <p className="flex items-center gap-2"><MapPin className="size-4 text-[#5b6371]" /> Delivery Address: <span className="font-semibold">{o.address || "N/A"}</span></p>
                   </div>
                 </SectionCard>
 
@@ -197,12 +200,12 @@ export default function OrdersPage() {
                     <ShoppingBag className="size-5" /> Order Items Summary
                   </h3>
                   <div className="mt-3 space-y-2 text-[14px]">
-                    <div className="flex justify-between"><span>Payment Method:</span><span className="font-semibold">{o.paymentMethod || "Stripe"}</span></div>
-                    <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(o.subtotal ?? 51.96)}</span></div>
-                    <div className="flex justify-between"><span>Delivery Fee</span><span>{formatCurrency(o.deliveryFee ?? 2)}</span></div>
+                    <div className="flex justify-between"><span>Payment Method:</span><span className="font-semibold">{o.paymentMethod || "N/A"}</span></div>
+                    <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(o.subtotal ?? o.totalAmount ?? 0)}</span></div>
+                    <div className="flex justify-between"><span>Delivery Fee</span><span>{formatCurrency(o.deliveryFee ?? 0)}</span></div>
                     <div className="flex justify-between border-t border-[#e3e6ec] pt-2 text-[16px] font-semibold">
                       <span>Total</span>
-                      <span className="text-[#3d8ef5]">{formatCurrency(o.totalAmount ?? 53.96)}</span>
+                      <span className="text-[#3d8ef5]">{formatCurrency(o.totalAmount ?? 0)}</span>
                     </div>
                   </div>
                 </SectionCard>

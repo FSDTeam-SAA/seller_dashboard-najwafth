@@ -11,7 +11,9 @@ import { getNotifications, getProfile, markAllNotificationsAsRead } from "@/lib/
 const statusStyles: Record<string, string> = {
   pending: "bg-[#ffefad] text-[#c48b00]",
   processing: "bg-[#c9e7d3] text-[#16934b]",
+  "in progress": "bg-[#d8e9ff] text-[#3d8ef5]",
   picked: "bg-[#fde2c9] text-[#cf6b1f]",
+  shipped: "bg-[#d8e9ff] text-[#3d8ef5]",
   delivered: "bg-[#d8e9ff] text-[#3d8ef5]",
   completed: "bg-[#c9e7d3] text-[#16934b]",
   cancelled: "bg-[#fde7e7] text-[#d92d20]",
@@ -226,7 +228,7 @@ export function HeaderBar() {
     (notif as { meta?: { unread?: number } } | undefined)?.meta?.unread ??
     0;
 
-  const profileName = profile?.name || "Rani";
+  const profileName = profile?.name || "Seller";
   const avatar = getAssetUrl(profile?.avatar || profile?.image);
 
   return (
@@ -257,7 +259,7 @@ export function HeaderBar() {
           </div>
           <div>
             <p className="text-[16px] font-semibold leading-[120%] text-[#202124]">{profileName}</p>
-            <p className="text-[14px] leading-[120%] text-[#5b6371]">@{profile?.role || "Admin"}</p>
+            <p className="text-[14px] leading-[120%] text-[#5b6371]">@{profile?.role || "seller"}</p>
           </div>
         </div>
       </header>
