@@ -19,7 +19,7 @@ type Book = {
   author?: string;
   price?: number;
   rating?: number;
-  stock?: boolean;
+  stock?: number | boolean;
   inStock?: boolean;
   description?: string;
   coverImage?: string;
@@ -35,7 +35,7 @@ const empty = {
   category: "",
   price: "",
   description: "",
-  inStock: true,
+  stock: "1",
 };
 
 function BookForm({
@@ -90,7 +90,7 @@ function BookForm({
               <Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="22" />
             </div>
           </div>
-          <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <div className="grid gap-4 md:grid-cols-[1fr_140px] md:items-end">
             <div>
               <label className="mb-2 block text-[14px] font-medium text-[#202124]">Category</label>
               <select
@@ -106,15 +106,17 @@ function BookForm({
                 ))}
               </select>
             </div>
-            <label className="flex items-center gap-2 text-[14px] font-medium text-[#202124]">
-              In Stock
-              <input
-                type="checkbox"
-                className="relative h-5 w-9 cursor-pointer appearance-none rounded-full bg-[#cfd4dc] outline-none transition before:absolute before:left-0.5 before:top-0.5 before:size-4 before:rounded-full before:bg-white before:transition checked:bg-[#3d8ef5] checked:before:translate-x-4"
-                checked={form.inStock}
-                onChange={(e) => setForm({ ...form, inStock: e.target.checked })}
+            <div>
+              <label className="mb-2 block text-[14px] font-medium text-[#202124]">Quantity</label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={form.stock}
+                onChange={(e) => setForm({ ...form, stock: e.target.value })}
+                placeholder="10"
               />
-            </label>
+            </div>
           </div>
           <div>
             <label className="mb-2 block text-[14px] font-medium text-[#202124]">Description</label>
@@ -223,13 +225,19 @@ export default function BooksPage() {
       return;
     }
 
+    const stockQuantity = Number(form.stock);
+    if (!form.stock || !Number.isInteger(stockQuantity) || stockQuantity < 0) {
+      toast.error("Stock quantity must be a whole number.");
+      return;
+    }
+
     const fd = new FormData();
     fd.set("title", form.title);
     fd.set("author", form.author);
     fd.set("price", form.price);
     fd.set("description", form.description);
     if (form.category) fd.set("category", form.category);
-    fd.set("stock", String(form.inStock));
+    fd.set("stock", String(stockQuantity));
     if (file) fd.set("coverImage", file);
 
     if (id) {
@@ -273,14 +281,15 @@ export default function BooksPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {books.map((book) => {
             const cover = getAssetUrl(book.image || book.coverImage);
-            const inStock = book.inStock ?? book.stock ?? true;
+            const stockQuantity = typeof book.stock === "boolean" ? (book.stock ? 1 : 0) : Number(book.stock ?? (book.inStock ? 1 : 0));
+            const inStock = stockQuantity > 0;
 
             return (
               <Card key={book._id} className="overflow-hidden rounded-[14px] border-[#e3e6ec] bg-white p-3 shadow-none">
                 <div className="relative aspect-[4/3] overflow-hidden rounded-[10px] bg-[#e3e6ec]">
                   {cover ? <Image src={cover} alt={book.title || "Book"} fill className="object-cover" sizes="320px" /> : null}
                   <span className="absolute right-2 top-2 rounded-md bg-[#103670] px-2 py-1 text-[11px] font-semibold text-white">
-                    {inStock ? "In Stock" : "Stock out"}
+                    {inStock ? `${stockQuantity} in stock` : "Stock out"}
                   </span>
                 </div>
                 <div className="mt-3 space-y-1">
@@ -331,7 +340,12 @@ export default function BooksPage() {
               category: editing.category?._id || "",
               price: String(editing.price ?? ""),
               description: editing.description || "",
-              inStock: editing.inStock ?? editing.stock ?? true,
+              stock:
+                typeof editing.stock === "boolean"
+                  ? editing.stock
+                    ? "1"
+                    : "0"
+                  : String(editing.stock ?? (editing.inStock ? 1 : 0)),
               coverImage: getAssetUrl(editing.image || editing.coverImage) || undefined,
             }}
             onCancel={() => setEditing(null)}
