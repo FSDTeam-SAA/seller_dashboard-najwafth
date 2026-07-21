@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, MapPin, Phone, ShieldCheck, ShoppingBag, User, X } from "lucide-react";
+import { Check, CreditCard, Eye, MapPin, Phone, ShoppingBag, Truck, User, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Modal, PageFrame, SectionCard, StatusPill } from "@/components/seller/primitives";
+import { Modal, PageFrame, SectionCard } from "@/components/seller/primitives";
 import { Button } from "@/components/ui/button";
 import { Pagination } from "@/components/ui/pagination";
 import { getOrderById, getSellerOrders, updateOrderStatus } from "@/lib/api";
@@ -18,8 +18,13 @@ type Order = {
   totalAmount?: number;
   subtotal?: number;
   deliveryFee?: number;
+  shippingFee?: number;
   status?: string;
   paymentMethod?: string;
+  paymentStatus?: string;
+  payment?: { paymentMethod?: string; paymentStatus?: string; transactionId?: string; price?: number } | null;
+  adminCommission?: number;
+  adminCommissionRate?: number;
   customer?: { name?: string; phone?: string; email?: string; address?: string };
   email?: string;
   phone?: string;
@@ -35,9 +40,23 @@ type OrdersResponse = {
 const tabs = [
   { id: "all", label: "All" },
   { id: "pending", label: "Pending" },
-  { id: "in_progress", label: "Processing" },
-  { id: "shipped", label: "Picked" },
+  { id: "processing", label: "Processing" },
+  { id: "picked", label: "Picked" },
   { id: "delivered", label: "Delivered" },
+] as const;
+
+const statusOptions = [
+  { value: "pending", label: "Pending" },
+  { value: "processing", label: "Processing" },
+  { value: "picked", label: "Picked" },
+  { value: "delivered", label: "Delivered" },
+] as const;
+
+const statusSteps = [
+  { value: "pending", label: "Pending", description: "Order received by store" },
+  { value: "processing", label: "Processing", description: "Store is preparing your order" },
+  { value: "picked", label: "Picked", description: "Delivery partner picked up order" },
+  { value: "delivered", label: "Delivered", description: "Order delivered successfully" },
 ] as const;
 
 export default function OrdersPage() {
@@ -66,6 +85,11 @@ export default function OrdersPage() {
       queryClient.invalidateQueries({ queryKey: ["seller-order"] });
     },
   });
+
+  const handleStatusChange = (id: string, currentStatus: string | undefined, nextStatus: string) => {
+    if (!id || !nextStatus || currentStatus === nextStatus) return;
+    statusMutation.mutate({ id, status: nextStatus });
+  };
 
   return (
     <PageFrame title="Orders Management" subtitle="Track and manage customer orders">
@@ -96,6 +120,7 @@ export default function OrdersPage() {
                 <th className="py-3">Phone Number</th>
                 <th className="py-3">Total Order</th>
                 <th className="py-3">Price</th>
+                <th className="py-3">Admin Commission</th>
                 <th className="py-3">Review</th>
                 <th className="py-3">Status</th>
                 <th className="py-3 text-right">Action</th>
@@ -113,11 +138,26 @@ export default function OrdersPage() {
                   <td className="py-3 text-[#5b6371]">{toText(order.customer?.phone || order.phone, "N/A")}</td>
                   <td className="py-3 text-[#5b6371]">{order.items?.length || 0} books</td>
                   <td className="py-3 text-[#202124]">{formatCurrency(order.totalAmount || 0)}</td>
+                  <td className="py-3 text-[#202124]">
+                    <p>{order.adminCommissionRate ?? 0}%</p>
+                    <p className="text-[12px] text-[#5b6371]">{formatCurrency(order.adminCommission ?? 0)}</p>
+                  </td>
                   <td className="py-3">
                     <span className="text-[#5b6371]">-</span>
                   </td>
                   <td className="py-3">
-                    <StatusPill status={order.status || "pending"} />
+                    <select
+                      value={order.status || "pending"}
+                      onChange={(event) => handleStatusChange(order.orderId || order._id, order.status || "pending", event.target.value)}
+                      disabled={statusMutation.isPending}
+                      className="h-9 rounded-full border border-[#cfe1f8] bg-[#d8e9ff] px-3 text-[13px] font-medium capitalize text-[#3d8ef5] outline-none disabled:opacity-60"
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td className="py-3 text-right">
                     <Button className="bg-[#3d8ef5] hover:bg-[#2f7be0]" onClick={() => setViewing(order.orderId || order._id)}>
@@ -128,7 +168,7 @@ export default function OrdersPage() {
               ))}
               {orders.length === 0 ? (
                 <tr className="border-t border-[#f0e7d4]">
-                  <td colSpan={9} className="py-8 text-center text-[#5b6371]">
+                  <td colSpan={10} className="py-8 text-center text-[#5b6371]">
                     No orders found
                   </td>
                 </tr>
@@ -151,12 +191,18 @@ export default function OrdersPage() {
           (() => {
             const o = orderQuery.data;
             const status = (o.status || "pending").toLowerCase();
+            const shippingFee = Number(o.shippingFee ?? o.deliveryFee ?? 0);
+            const subtotal = Number(o.subtotal ?? o.totalAmount ?? 0);
+            const total = subtotal + shippingFee;
+            const paymentStatus = o.paymentStatus || o.payment?.paymentStatus || "pending";
+            const paymentMethod =
+              o.payment?.paymentMethod || o.paymentMethod || (paymentStatus === "complete" || paymentStatus === "paid" ? "Stripe" : "Cash on Delivery");
             return (
               <>
                 <div className="mb-5 flex items-start justify-between">
                   <div>
                     <h2 className="flex items-center gap-3 text-[22px] font-semibold text-[#202124]">
-                      Order {o.orderId || o._id} <StatusPill status={status} />
+                      Order {o.orderId || o._id}
                     </h2>
                     <p className="mt-1 text-[14px] text-[#5b6371]">
                       {o.createdAt ? new Date(o.createdAt).toLocaleString() : ""}
@@ -165,23 +211,6 @@ export default function OrdersPage() {
                   <button onClick={() => setViewing(null)} type="button" className="text-[#5b6371]">
                     <X className="size-5" />
                   </button>
-                </div>
-                <div className="mb-5 flex justify-end">
-                  {status === "pending" ? (
-                    <Button
-                      className="bg-[#3d8ef5] hover:bg-[#2f7be0]"
-                      onClick={() => statusMutation.mutate({ id: o.orderId || o._id, status: "in_progress" })}
-                    >
-                      <ShieldCheck className="size-4" /> Mark as Ready
-                    </Button>
-                  ) : status !== "delivered" ? (
-                    <Button
-                      className="bg-[#16934b] hover:bg-[#137a3d]"
-                      onClick={() => statusMutation.mutate({ id: o.orderId || o._id, status: "delivered" })}
-                    >
-                      <ShieldCheck className="size-4" /> Mark as Delivered
-                    </Button>
-                  ) : null}
                 </div>
 
                 <SectionCard className="mb-4 border border-[#e3e6ec]">
@@ -195,17 +224,75 @@ export default function OrdersPage() {
                   </div>
                 </SectionCard>
 
+                <SectionCard className="mb-4 border border-[#e3e6ec]">
+                  <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="flex items-center gap-2 text-[16px] font-semibold text-[#202124]">
+                      <Truck className="size-5 text-[#3d8ef5]" /> Order Status
+                    </h3>
+                    <select
+                      value={status}
+                      onChange={(event) => handleStatusChange(o.orderId || o._id, status, event.target.value)}
+                      disabled={statusMutation.isPending}
+                      className="h-10 rounded-[12px] border border-[#cfd4dc] bg-white px-4 text-[14px] font-semibold capitalize text-[#202124] outline-none disabled:opacity-60"
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-0">
+                    {statusSteps.map((step, index) => {
+                      const activeIndex = statusSteps.findIndex((item) => item.value === status);
+                      const isComplete = activeIndex >= index;
+                      const isCurrent = activeIndex === index;
+
+                      return (
+                        <div key={step.value} className="flex gap-4">
+                          <div className="flex flex-col items-center">
+                            <span
+                              className={cn(
+                                "flex size-5 items-center justify-center rounded-full border-2",
+                                isComplete ? "border-[#3d8ef5] bg-[#3d8ef5] text-white" : "border-[#d8dde6] bg-white text-transparent",
+                              )}
+                            >
+                              <Check className="size-3" />
+                            </span>
+                            {index < statusSteps.length - 1 ? (
+                              <span className={cn("h-11 w-px", activeIndex > index ? "bg-[#3d8ef5]" : "bg-[#d8dde6]")} />
+                            ) : null}
+                          </div>
+                          <div className={cn(index < statusSteps.length - 1 ? "pb-5" : "", "-mt-0.5")}>
+                            <p className={cn("text-[15px] font-semibold", isCurrent ? "text-[#3d8ef5]" : "text-[#202124]")}>
+                              {step.label}
+                            </p>
+                            <p className="mt-1 text-[12px] text-[#9aa1ad]">{step.description}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </SectionCard>
+
                 <SectionCard className="border border-[#e3e6ec]">
                   <h3 className="flex items-center gap-2 text-[16px] font-semibold text-[#3d8ef5]">
                     <ShoppingBag className="size-5" /> Order Items Summary
                   </h3>
                   <div className="mt-3 space-y-2 text-[14px]">
-                    <div className="flex justify-between"><span>Payment Method:</span><span className="font-semibold">{o.paymentMethod || "N/A"}</span></div>
-                    <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(o.subtotal ?? o.totalAmount ?? 0)}</span></div>
-                    <div className="flex justify-between"><span>Delivery Fee</span><span>{formatCurrency(o.deliveryFee ?? 0)}</span></div>
+                    <div className="flex justify-between gap-4">
+                      <span className="inline-flex items-center gap-2"><CreditCard className="size-4 text-[#5b6371]" /> Payment Method:</span>
+                      <span className="font-semibold">{paymentMethod}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span>Payment Status:</span>
+                      <span className="font-semibold capitalize">{paymentStatus.replaceAll("_", " ")}</span>
+                    </div>
+                    <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
+                    <div className="flex justify-between"><span>Delivery Fee</span><span>{formatCurrency(shippingFee)}</span></div>
                     <div className="flex justify-between border-t border-[#e3e6ec] pt-2 text-[16px] font-semibold">
                       <span>Total</span>
-                      <span className="text-[#3d8ef5]">{formatCurrency(o.totalAmount ?? 0)}</span>
+                      <span className="text-[#3d8ef5]">{formatCurrency(total)}</span>
                     </div>
                   </div>
                 </SectionCard>

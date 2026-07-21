@@ -173,13 +173,17 @@ export async function getSellerSales(params: { period?: "week" | "month" | "year
   try {
     void params;
     const overview = await getSellerOverview();
-    const completed = overview?.metrics?.totalCompletedOrders ?? 0;
+    const orderCount = overview?.metrics?.totalOrders ?? overview?.metrics?.totalCompletedOrders ?? 0;
     const totalRevenue = overview?.metrics?.totalRevenue ?? 0;
-    const avg = completed > 0 ? totalRevenue / completed : 0;
+    const totalAdminCommission = overview?.metrics?.totalAdminCommission ?? 0;
+    const netRevenue = overview?.metrics?.netRevenue ?? Math.max(totalRevenue - totalAdminCommission, 0);
+    const avg = orderCount > 0 ? totalRevenue / orderCount : 0;
     return {
       metrics: {
         totalRevenue,
-        completedOrders: completed,
+        totalAdminCommission,
+        netRevenue,
+        completedOrders: orderCount,
         avgOrderValue: Number(avg.toFixed(2)),
       },
       analysis: overview?.salesAnalysis || [],

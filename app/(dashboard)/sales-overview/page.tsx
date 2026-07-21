@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
-import { BookOpen, MapPin, Plus, ShoppingCart, Star, Users } from "lucide-react";
+import { BookOpen, DollarSign, MapPin, Plus, ShoppingCart, Star, TrendingUp, Users } from "lucide-react";
 import { useState } from "react";
 import { MetricCard, PageFrame, PeriodTabs, SectionCard } from "@/components/seller/primitives";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,13 @@ type Book = {
 };
 
 type SalesResp = {
-  metrics?: { totalRevenue?: number; completedOrders?: number; avgOrderValue?: number };
+  metrics?: {
+    totalRevenue?: number;
+    totalAdminCommission?: number;
+    netRevenue?: number;
+    completedOrders?: number;
+    avgOrderValue?: number;
+  };
   analysis?: { label: string; value: number }[];
   topBooks?: Book[];
 };
@@ -53,13 +59,15 @@ export default function SalesOverviewPage() {
         </Button>
       }
     >
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <MetricCard label="Total Revenue" value={formatCurrency(metrics.totalRevenue ?? 0)} icon={<BookOpen className="size-5" />} iconBg="bg-[#3d8ef5]" iconColor="text-white" />
-        <MetricCard label="Completed Orders" value={metrics.completedOrders ?? 0} icon={<ShoppingCart className="size-5" />} iconBg="bg-[#3d8ef5]" iconColor="text-white" />
+        <MetricCard label="Admin Commission" value={formatCurrency(metrics.totalAdminCommission ?? 0)} icon={<DollarSign className="size-5" />} iconBg="bg-[#fe8a3b]" iconColor="text-white" />
+        <MetricCard label="Net Revenue" value={formatCurrency(metrics.netRevenue ?? 0)} icon={<TrendingUp className="size-5" />} iconBg="bg-[#16934b]" iconColor="text-white" />
+        <MetricCard label="Total Orders" value={metrics.completedOrders ?? 0} icon={<ShoppingCart className="size-5" />} iconBg="bg-[#3d8ef5]" iconColor="text-white" />
         <MetricCard label="Avg. Order Value" value={formatCurrency(metrics.avgOrderValue ?? 0)} icon={<Users className="size-5" />} iconBg="bg-[#f87171]" iconColor="text-white" />
       </div>
 
-      <SectionCard className="mt-6">
+      <SectionCard className="mt-6 pb-8">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[20px] font-semibold text-[#202124]">Revenue Overview</h2>
@@ -68,7 +76,7 @@ export default function SalesOverviewPage() {
           <PeriodTabs value={period} onChange={setPeriod} />
         </div>
         {sales.length > 0 ? (
-          <div className="relative h-[260px] w-full">
+          <div className="relative h-[300px] w-full pb-8">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
               <defs>
                 <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
@@ -79,7 +87,7 @@ export default function SalesOverviewPage() {
               <polyline fill="none" stroke="#fe8a3b" strokeWidth="0.6" points={points} />
               <polygon fill="url(#revFill)" points={`0,100 ${points} 100,100`} />
             </svg>
-            <div className="mt-2 grid grid-cols-7 text-center text-[12px] text-[#5b6371]">
+            <div className="absolute inset-x-0 bottom-0 grid grid-cols-7 text-center text-[12px] text-[#5b6371]">
               {sales.map((p) => (
                 <span key={p.label}>{p.label}</span>
               ))}
