@@ -45,3 +45,8 @@ button:not(:disabled),
 button:disabled {
   cursor: not-allowed;
 }
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
