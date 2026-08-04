@@ -28,6 +28,9 @@ type Book = {
 };
 type BooksResp = { books?: Book[]; meta?: { totalPage?: number } };
 type Profile = { _id?: string };
+type BulkBookRow = typeof empty & {
+  rowNumber: number;
+};
 
 const empty = {
   title: "",
@@ -37,6 +40,136 @@ const empty = {
   description: "",
   stock: "1",
 };
+
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        value += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      row.push(value.trim());
+      value = "";
+      continue;
+    }
+
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") {
+        index += 1;
+      }
+      row.push(value.trim());
+      if (row.some(Boolean)) {
+        rows.push(row);
+      }
+      row = [];
+      value = "";
+      continue;
+    }
+
+    value += char;
+  }
+
+  row.push(value.trim());
+  if (row.some(Boolean)) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function resolveCategoryId(value: string, categories: Category[]) {
+  const normalized = value.trim().toLowerCase();
+  const match = categories.find(
+    (category) => category._id === value.trim() || category.name.toLowerCase() === normalized,
+  );
+  return match?._id || "";
+}
+
+function parseBulkBooksCsv(text: string, categories: Category[]) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) {
+    return { books: [] as BulkBookRow[], errors: ["CSV must include a header row and at least one book row."] };
+  }
+
+  const headers = rows[0].map((header) => header.trim().toLowerCase());
+  const indexOf = (name: string) => headers.indexOf(name);
+  const requiredHeaders = ["title", "author", "category", "price"];
+  const missingHeaders = requiredHeaders.filter((header) => !headers.includes(header));
+  const quantityIndex = indexOf("quantity") >= 0 ? indexOf("quantity") : indexOf("stock");
+
+  if (missingHeaders.length > 0 || quantityIndex < 0) {
+    const missing = [...missingHeaders];
+    if (quantityIndex < 0) {
+      missing.push("quantity");
+    }
+    return {
+      books: [] as BulkBookRow[],
+      errors: [`Missing required columns: ${missing.join(", ")}.`],
+    };
+  }
+
+  const books: BulkBookRow[] = [];
+  const errors: string[] = [];
+
+  rows.slice(1).forEach((row, index) => {
+    const rowNumber = index + 2;
+    const title = row[indexOf("title")] || "";
+    const author = row[indexOf("author")] || "";
+    const categoryValue = row[indexOf("category")] || "";
+    const price = row[indexOf("price")] || "";
+    const stock = row[quantityIndex] || "";
+    const descriptionIndex = indexOf("description");
+    const category = resolveCategoryId(categoryValue, categories);
+    const numericPrice = Number(price);
+    const stockQuantity = Number(stock);
+
+    if (!title || !author || !categoryValue || !price || !stock) {
+      errors.push(`Row ${rowNumber}: title, author, category, price, and quantity are required.`);
+      return;
+    }
+
+    if (!category) {
+      errors.push(`Row ${rowNumber}: category must match an existing category name or ID.`);
+      return;
+    }
+
+    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
+      errors.push(`Row ${rowNumber}: price must be a valid non-negative number.`);
+      return;
+    }
+
+    if (!Number.isInteger(stockQuantity) || stockQuantity < 0) {
+      errors.push(`Row ${rowNumber}: quantity must be a non-negative whole number.`);
+      return;
+    }
+
+    books.push({
+      rowNumber,
+      title,
+      author,
+      category,
+      price,
+      stock,
+      description: descriptionIndex >= 0 ? row[descriptionIndex] || "" : "",
+    });
+  });
+
+  return { books, errors };
+}
 
 function BookForm({
   initial,
@@ -92,7 +225,7 @@ function BookForm({
           </div>
           <div className="grid gap-4 md:grid-cols-[1fr_140px] md:items-end">
             <div>
-              <label className="mb-2 block text-[14px] font-medium text-[#202124]">Category</label>
+            <label className="mb-2 block text-[14px] font-medium text-[#202124]">Category *</label>
               <select
                 className="h-12 w-full rounded-[10px] border border-[#cfd4dc] bg-white px-4 text-[14px] text-[#202124]"
                 value={form.category}
@@ -107,7 +240,7 @@ function BookForm({
               </select>
             </div>
             <div>
-              <label className="mb-2 block text-[14px] font-medium text-[#202124]">Quantity</label>
+              <label className="mb-2 block text-[14px] font-medium text-[#202124]">Quantity *</label>
               <Input
                 type="number"
                 min="0"
@@ -141,6 +274,192 @@ function BookForm({
   );
 }
 
+function BulkBookUpload({
+  categories,
+  isPending,
+  onCancel,
+  onSubmit,
+}: {
+  categories: Category[];
+  isPending: boolean;
+  onCancel: () => void;
+  onSubmit: (books: BulkBookRow[]) => void;
+}) {
+  const [fileName, setFileName] = useState("");
+  const [books, setBooks] = useState<BulkBookRow[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+  const categoryExample = categories[0]?.name || "Fiction";
+  const sampleCsv = [
+    "title,author,category,price,quantity,description",
+    `"Atomic Habits","James Clear","${categoryExample}",18.99,20,"Build better habits"`,
+    `"Deep Work","Cal Newport","${categoryExample}",16.5,15,"Focus without distraction"`,
+    `"The Alchemist","Paulo Coelho","${categoryExample}",12.99,18,"A journey of purpose and dreams"`,
+    `"Ikigai","Hector Garcia","${categoryExample}",14.25,12,"Find meaning in everyday life"`,
+    `"The Psychology of Money","Morgan Housel","${categoryExample}",17.75,10,"Timeless lessons about wealth"`,
+  ].join("\n");
+  const csvColumns = [
+    { name: "title", required: true, example: "Atomic Habits" },
+    { name: "author", required: true, example: "James Clear" },
+    { name: "category", required: true, example: categoryExample },
+    { name: "price", required: true, example: "18.99" },
+    { name: "quantity", required: true, example: "20" },
+    { name: "description", required: false, example: "Build better habits" },
+  ];
+
+  const downloadSample = () => {
+    const blob = new Blob([sampleCsv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "books-bulk-upload-sample.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onPickFile = async (file?: File) => {
+    if (!file) {
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setFileName(file.name);
+      setBooks([]);
+      setErrors(["Please upload a .csv file."]);
+      return;
+    }
+
+    const text = await file.text();
+    const parsed = parseBulkBooksCsv(text, categories);
+    setFileName(file.name);
+    setBooks(parsed.books);
+    setErrors(parsed.errors);
+    if (parsed.errors.length > 0) {
+      toast.warning(`${parsed.errors.length} row(s) will be skipped. Check the skipped rows list for details.`);
+    }
+  };
+
+  return (
+    <>
+      <ModalHeader
+        title="Bulk Upload Books"
+        subtitle="Upload a CSV file to add multiple books at once"
+        onClose={onCancel}
+      />
+      <div className="space-y-5">
+        <div className="rounded-[14px] border border-[#d8dde6] bg-[#f8fbff] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[15px] font-semibold text-[#202124]">CSV format</p>
+              <p className="mt-1 text-[13px] text-[#5b6371]">
+                Keep the first row exactly as column headers. Required columns are marked with *.
+              </p>
+            </div>
+            <Button variant="outline" className="h-9 shrink-0 px-3 text-[13px]" onClick={downloadSample} type="button">
+              Download Sample
+            </Button>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-[10px] border border-[#e3e6ec] bg-white">
+            <div className="grid grid-cols-[120px_90px_1fr] bg-[#eef5ff] px-3 py-2 text-[12px] font-semibold text-[#202124]">
+              <span>Column</span>
+              <span>Required</span>
+              <span>Example</span>
+            </div>
+            {csvColumns.map((column) => (
+              <div
+                key={column.name}
+                className="grid grid-cols-[120px_90px_1fr] border-t border-[#edf0f4] px-3 py-2 text-[12px] text-[#5b6371]"
+              >
+                <span className="font-mono font-semibold text-[#202124]">
+                  {column.name}
+                  {column.required ? " *" : ""}
+                </span>
+                <span>{column.required ? "Yes" : "No"}</span>
+                <span className="truncate">{column.example}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-3 text-[13px] text-[#5b6371]">
+            Category must match an existing backend category name or category ID. Matching categories are saved with their category ID.
+            Rows with unmatched categories are skipped. Cover image is not uploaded by CSV; add images later from Edit Book.
+          </p>
+        </div>
+
+        <label className="flex min-h-[150px] cursor-pointer flex-col items-center justify-center rounded-[14px] border border-dashed border-[#6d98c0] bg-white px-5 py-8 text-center text-[#3d8ef5]">
+          <Upload className="size-8" />
+          <p className="mt-3 text-[16px] font-semibold">{fileName || "Choose CSV file"}</p>
+          <p className="mt-1 text-[13px] text-[#5b6371]">Only .csv files are supported</p>
+          <input className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onPickFile(event.target.files?.[0])} />
+        </label>
+
+        {errors.length > 0 ? (
+          <div className="max-h-[160px] overflow-auto rounded-[12px] border border-[#f3b4b4] bg-[#fff5f5] p-4 text-[13px] text-[#b42318]">
+            <p className="mb-2 font-semibold">{errors.length} skipped row(s)</p>
+            {errors.map((error) => (
+              <p key={error}>{error}</p>
+            ))}
+          </div>
+        ) : null}
+
+        {books.length > 0 ? (
+          <div className="overflow-hidden rounded-[12px] border border-[#e3e6ec]">
+            <div className="border-b border-[#e3e6ec] bg-[#f8fbff] px-4 py-3 text-[14px] font-medium text-[#202124]">
+              Preview: {books.length} valid {books.length === 1 ? "book" : "books"}
+            </div>
+            <div className="max-h-[260px] overflow-auto">
+              <table className="w-full min-w-[960px] text-left text-[13px]">
+                <thead className="bg-white text-[#5b6371]">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Row</th>
+                    <th className="px-4 py-3 font-medium">Title</th>
+                    <th className="px-4 py-3 font-medium">Author</th>
+                    <th className="px-4 py-3 font-medium">Category</th>
+                    <th className="px-4 py-3 font-medium">Price</th>
+                    <th className="px-4 py-3 font-medium">Quantity</th>
+                    <th className="px-4 py-3 font-medium">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {books.map((book) => (
+                    <tr key={`${book.rowNumber}-${book.title}`} className="border-t border-[#edf0f4]">
+                      <td className="px-4 py-3 text-[#5b6371]">{book.rowNumber}</td>
+                      <td className="px-4 py-3 font-medium text-[#202124]">{book.title}</td>
+                      <td className="px-4 py-3 text-[#5b6371]">{book.author}</td>
+                      <td className="px-4 py-3 text-[#5b6371]">{book.category}</td>
+                      <td className="px-4 py-3 text-[#5b6371]">{book.price}</td>
+                      <td className="px-4 py-3 text-[#5b6371]">{book.stock}</td>
+                      <td className="max-w-[260px] truncate px-4 py-3 text-[#5b6371]">{book.description || "N/A"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-6 flex justify-end gap-3">
+        <Button variant="outline" onClick={onCancel} type="button">
+          Cancel
+        </Button>
+        <Button
+          className="bg-[#6d98c0] hover:bg-[#5f88ae]"
+          disabled={isPending || books.length === 0}
+          onClick={() => {
+            if (errors.length > 0) {
+              toast.warning(`${books.length} valid row(s) will upload. ${errors.length} row(s) will not upload.`);
+            }
+            onSubmit(books);
+          }}
+          type="button"
+        >
+          {isPending ? "Uploading..." : "Upload Books"}
+        </Button>
+      </div>
+    </>
+  );
+}
+
 function BooksGridSkeleton() {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -154,6 +473,7 @@ function BooksGridSkeleton() {
 export default function BooksPage() {
   const queryClient = useQueryClient();
   const [openAdd, setOpenAdd] = useState(false);
+  const [openBulk, setOpenBulk] = useState(false);
   const [editing, setEditing] = useState<Book | null>(null);
   const [openPublish, setOpenPublish] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -183,6 +503,46 @@ export default function BooksPage() {
       toast.success("Book created.");
       queryClient.invalidateQueries({ queryKey: ["seller-books"] });
       setOpenAdd(false);
+    },
+  });
+  const bulkCreateMutation = useMutation({
+    mutationFn: async (rows: BulkBookRow[]) => {
+      const failures: string[] = [];
+
+      for (const row of rows) {
+        const fd = new FormData();
+        fd.set("title", row.title);
+        fd.set("author", row.author);
+        fd.set("price", row.price);
+        fd.set("description", row.description);
+        fd.set("category", row.category);
+        fd.set("stock", row.stock);
+
+        try {
+          await createBook(fd);
+        } catch {
+          failures.push(`Row ${row.rowNumber}: ${row.title}`);
+        }
+      }
+
+      return {
+        uploaded: rows.length - failures.length,
+        failed: failures,
+      };
+    },
+    onSuccess: ({ uploaded, failed }) => {
+      if (failed.length > 0) {
+        toast.warning(`${uploaded} uploaded, ${failed.length} not uploaded. ${failed.join(", ")}`);
+      } else {
+        toast.success(`${uploaded} ${uploaded === 1 ? "book" : "books"} uploaded.`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["seller-books"] });
+      if (uploaded > 0) {
+        setOpenBulk(false);
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "Bulk upload failed.");
     },
   });
   const updateMutation = useMutation({
@@ -255,7 +615,10 @@ export default function BooksPage() {
       action={
         <div className="flex gap-3">
           <Button className="bg-[#6d98c0] hover:bg-[#5f88ae]" onClick={() => setOpenAdd(true)}>
-            <Plus className="size-4" /> Add New Book
+            <Plus className="size-4" /> Add Single Book
+          </Button>
+          <Button variant="outline" onClick={() => setOpenBulk(true)}>
+            <Upload className="size-4" /> Bulk Upload CSV
           </Button>
           <Button variant="outline" onClick={() => setOpenPublish(true)} disabled={books.length === 0}>
             <Upload className="size-4" /> Published
@@ -269,9 +632,12 @@ export default function BooksPage() {
         <Card className="rounded-[18px] border-dashed border-[#cfd4dc] bg-white p-10 text-center shadow-none">
           <h2 className="text-[20px] font-semibold text-[#202124]">No books yet</h2>
           <p className="mt-2 text-[15px] text-[#5b6371]">Create books from seller dashboard and they will show here.</p>
-          <div className="mt-6">
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button className="bg-[#6d98c0] hover:bg-[#5f88ae]" onClick={() => setOpenAdd(true)}>
-              <Plus className="size-4" /> Add New Book
+              <Plus className="size-4" /> Add Single Book
+            </Button>
+            <Button variant="outline" onClick={() => setOpenBulk(true)}>
+              <Upload className="size-4" /> Bulk Upload CSV
             </Button>
           </div>
         </Card>
@@ -328,6 +694,15 @@ export default function BooksPage() {
           title="Add New Book"
           subtitle="Add a new book by filling in the required information"
           categories={categories}
+        />
+      </Modal>
+
+      <Modal open={openBulk} onClose={() => setOpenBulk(false)} className="max-w-[880px]">
+        <BulkBookUpload
+          categories={categories}
+          isPending={bulkCreateMutation.isPending}
+          onCancel={() => setOpenBulk(false)}
+          onSubmit={(rows) => bulkCreateMutation.mutate(rows)}
         />
       </Modal>
 

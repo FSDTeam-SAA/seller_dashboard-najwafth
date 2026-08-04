@@ -56,7 +56,7 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
               href={item.href}
               className={cn(
                 "flex items-center gap-3 rounded-[10px] px-4 py-3 text-[16px] font-medium transition",
-                isActive ? "bg-[#6d98c0] text-white" : "text-[#252525] hover:bg-white/60",
+                isActive ? "bg-white text-[#252525] shadow-sm" : "text-[#252525] hover:bg-white/60",
               )}
               onClick={onClose}
             >
@@ -70,7 +70,7 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
         href="/logout"
         className={cn(
           "flex items-center gap-3 rounded-[10px] px-4 py-3 text-[16px] font-medium transition",
-          matchRoute(pathname, "/logout") ? "bg-[#6d98c0] text-white" : "text-[#252525] hover:bg-white/60",
+          matchRoute(pathname, "/logout") ? "bg-white text-[#252525] shadow-sm" : "text-[#252525] hover:bg-white/60",
         )}
         onClick={onClose}
       >
